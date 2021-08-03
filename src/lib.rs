@@ -6,6 +6,8 @@ pub extern crate glyph_brush;
 mod builder;
 
 pub use builder::GlyphBrushBuilder;
+use glyph_brush::ab_glyph::{point, Font, FontArc, Rect};
+use glyph_brush::legacy::VariedSection;
 
 use std::borrow::Cow;
 use std::hash::{BuildHasher, Hash};
@@ -17,11 +19,9 @@ use glium::texture::texture2d::Texture2d;
 use glium::texture::{ClientFormat, RawImage2d};
 use glium::{Program, Surface};
 
-use glyph_brush::rusttype::{Rect, SharedBytes};
 use glyph_brush::{
-    rusttype::{point, Font},
     BrushAction, BrushError, DefaultSectionHasher, FontId, GlyphCruncher, GlyphPositioner,
-    PositionedGlyphIter, VariedSection,
+    Rectangle, Section,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -52,21 +52,21 @@ struct InstanceVertex {
 
 implement_vertex!(InstanceVertex, v);
 
-fn rect_to_rect(rect: Rect<u32>) -> glium::Rect {
+fn rect_to_rect(rect: Rectangle<u32>) -> glium::Rect {
     glium::Rect {
-        left: rect.min.x,
-        bottom: rect.min.y,
+        left: rect.min[0],
+        bottom: rect.min[1],
         width: rect.width(),
         height: rect.height(),
     }
 }
 
-fn update_texture(tex: &Texture2d, rect: Rect<u32>, tex_data: &[u8]) {
+fn update_texture(tex: &Texture2d, rect: Rectangle<u32>, tex_data: &[u8]) {
     let image = RawImage2d {
         data: std::borrow::Cow::Borrowed(tex_data),
         format: ClientFormat::U8,
-        height: rect.height(),
-        width: rect.width(),
+        height: rect.height() as u32,
+        width: rect.width() as u32,
     };
     tex.write(rect_to_rect(rect), image);
 }
@@ -77,8 +77,7 @@ fn to_vertex(
         mut tex_coords,
         pixel_coords,
         bounds,
-        color,
-        z,
+        extra: glyph_brush::Extra { color, z },
     }: glyph_brush::GlyphVertex,
 ) -> GlyphVertex {
     let gl_bounds = bounds;
@@ -111,11 +110,11 @@ fn to_vertex(
     }
 
     GlyphVertex {
-        left_top: [gl_rect.min.x, gl_rect.max.y, z],
+        left_top: [gl_rect.min.x, gl_rect.max.y, *z],
         right_bottom: [gl_rect.max.x, gl_rect.min.y],
         tex_left_top: [tex_coords.min.x, tex_coords.max.y],
         tex_right_bottom: [tex_coords.max.x, tex_coords.min.y],
-        color,
+        color: *color,
     }
 }
 
@@ -174,8 +173,8 @@ fn to_vertex(
 /// the previous draw call.
 */
 
-pub struct GlyphBrush<'font, 'a, H: BuildHasher = DefaultSectionHasher> {
-    glyph_brush: glyph_brush::GlyphBrush<'font, GlyphVertex, H>,
+pub struct GlyphBrush<'a> {
+    glyph_brush: glyph_brush::GlyphBrush<GlyphVertex>,
     params: glium::DrawParameters<'a>,
     program: Program,
     texture: Texture2d,
@@ -184,40 +183,36 @@ pub struct GlyphBrush<'font, 'a, H: BuildHasher = DefaultSectionHasher> {
     instances: glium::VertexBuffer<InstanceVertex>,
 }
 
-impl<'font, 'p> GlyphBrush<'font, 'p> {
-    pub fn new<'a: 'font, F: Facade, V: Into<Vec<Font<'a>>>>(facade: &F, fonts: V) -> Self {
+impl<'p> GlyphBrush<'p> {
+    pub fn new<F: Facade>(facade: &F, fonts: Vec<FontArc>) -> Self {
         GlyphBrushBuilder::using_fonts(fonts).build(facade)
     }
-}
 
-impl<'font, 'p, H: BuildHasher> GlyphBrush<'font, 'p, H> {
+    // impl<'p, H: BuildHasher + Clone + Hash> GlyphBrush<'p, H> {
+    //     /// Queues a section/layout to be drawn by the next call of
+    //     /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be called multiple times
+    //     /// to queue multiple sections for drawing.
+    //     ///
+    //     /// Used to provide custom `GlyphPositioner` logic, if using built-in
+    //     /// [`Layout`](enum.Layout.html) simply use [`queue`](struct.GlyphBrush.html#method.queue)
+    //     ///
+    //     /// Benefits from caching, see [caching behaviour](#caching-behaviour).
+    //     #[inline]
+    //     pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
+    //     where
+    //         G: GlyphPositioner,
+    //         S: Into<Cow<'a, Section<'a>>>,
+    //     {
+    //         self.glyph_brush.queue_custom_layout(section, custom_layout)
+    //     }
+
     /// Queues a section/layout to be drawn by the next call of
     /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be called multiple times
     /// to queue multiple sections for drawing.
     ///
-    /// Used to provide custom `GlyphPositioner` logic, if using built-in
-    /// [`Layout`](enum.Layout.html) simply use [`queue`](struct.GlyphBrush.html#method.queue)
-    ///
     /// Benefits from caching, see [caching behaviour](#caching-behaviour).
     #[inline]
-    pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
-    where
-        G: GlyphPositioner,
-        S: Into<Cow<'a, VariedSection<'a>>>,
-    {
-        self.glyph_brush.queue_custom_layout(section, custom_layout)
-    }
-
-    /// Queues a section/layout to be drawn by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be called multiple times
-    /// to queue multiple sections for drawing.
-    ///
-    /// Benefits from caching, see [caching behaviour](#caching-behaviour).
-    #[inline]
-    pub fn queue<'a, S>(&mut self, section: S)
-    where
-        S: Into<Cow<'a, VariedSection<'a>>>,
-    {
+    pub fn queue<'a>(&mut self, section: Section<'a>) {
         self.glyph_brush.queue(section)
     }
 
@@ -231,7 +226,6 @@ impl<'font, 'p, H: BuildHasher> GlyphBrush<'font, 'p, H> {
     /// Can also be used with gfx raw render & depth views if necessary. The `Format` must also
     /// be provided. [See example.](struct.GlyphBrush.html#raw-usage-1)
     	*/
-
     #[inline]
     pub fn draw_queued<F: Facade + Deref<Target = Context>, S: Surface>(
         &mut self,
@@ -296,7 +290,6 @@ impl<'font, 'p, H: BuildHasher> GlyphBrush<'font, 'p, H> {
     /// # }
     /// ```
     	*/
-
     pub fn draw_queued_with_transform<F: Facade + Deref<Target = Context>, S: Surface>(
         &mut self,
         transform: [[f32; 4]; 4],
@@ -360,84 +353,83 @@ impl<'font, 'p, H: BuildHasher> GlyphBrush<'font, 'p, H> {
             .unwrap();
     }
 
-    /*
-    /// Adds an additional font to the one(s) initially added on build.
-    ///
-    /// Returns a new [`FontId`](struct.FontId.html) to reference this font.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # extern crate gfx;
-    /// # extern crate gfx_window_glutin;
-    /// # extern crate glutin;
-    /// extern crate gfx_glyph;
-    /// use gfx_glyph::{GlyphBrushBuilder, Section};
-    /// # fn main() {
-    /// # let events_loop = glutin::EventsLoop::new();
-    /// # let (_window, _device, mut gfx_factory, gfx_color, gfx_depth) =
-    /// #     gfx_window_glutin::init::<gfx::format::Srgba8, gfx::format::Depth>(
-    /// #         glutin::WindowBuilder::new(),
-    /// #         glutin::ContextBuilder::new(),
-    /// #         &events_loop);
-    /// # let mut gfx_encoder: gfx::Encoder<_, _> = gfx_factory.create_command_buffer().into();
-    ///
-    /// // dejavu is built as default `FontId(0)`
-    /// let dejavu: &[u8] = include_bytes!("../../fonts/DejaVuSans.ttf");
-    /// let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(dejavu).build(gfx_factory.clone());
-    ///
-    /// // some time later, add another font referenced by a new `FontId`
-    /// let open_sans_italic: &[u8] = include_bytes!("../../fonts/OpenSans-Italic.ttf");
-    /// let open_sans_italic_id = glyph_brush.add_font_bytes(open_sans_italic);
-    /// # glyph_brush.draw_queued(&mut gfx_encoder, &gfx_color, &gfx_depth).unwrap();
-    /// # let _ = open_sans_italic_id;
-    /// # }
-    /// ```
-    	*/
+    //     /*
+    //     /// Adds an additional font to the one(s) initially added on build.
+    //     ///
+    //     /// Returns a new [`FontId`](struct.FontId.html) to reference this font.
+    //     ///
+    //     /// # Example
+    //     ///
+    //     /// ```no_run
+    //     /// # extern crate gfx;
+    //     /// # extern crate gfx_window_glutin;
+    //     /// # extern crate glutin;
+    //     /// extern crate gfx_glyph;
+    //     /// use gfx_glyph::{GlyphBrushBuilder, Section};
+    //     /// # fn main() {
+    //     /// # let events_loop = glutin::EventsLoop::new();
+    //     /// # let (_window, _device, mut gfx_factory, gfx_color, gfx_depth) =
+    //     /// #     gfx_window_glutin::init::<gfx::format::Srgba8, gfx::format::Depth>(
+    //     /// #         glutin::WindowBuilder::new(),
+    //     /// #         glutin::ContextBuilder::new(),
+    //     /// #         &events_loop);
+    //     /// # let mut gfx_encoder: gfx::Encoder<_, _> = gfx_factory.create_command_buffer().into();
+    //     ///
+    //     /// // dejavu is built as default `FontId(0)`
+    //     /// let dejavu: &[u8] = include_bytes!("../../fonts/DejaVuSans.ttf");
+    //     /// let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(dejavu).build(gfx_factory.clone());
+    //     ///
+    //     /// // some time later, add another font referenced by a new `FontId`
+    //     /// let open_sans_italic: &[u8] = include_bytes!("../../fonts/OpenSans-Italic.ttf");
+    //     /// let open_sans_italic_id = glyph_brush.add_font_bytes(open_sans_italic);
+    //     /// # glyph_brush.draw_queued(&mut gfx_encoder, &gfx_color, &gfx_depth).unwrap();
+    //     /// # let _ = open_sans_italic_id;
+    //     /// # }
+    //     /// ```
+    //     	*/
+    //     // pub fn add_font_bytes<B: Into<SharedBytes>>(&mut self, font_data: B) -> FontId {
+    //     //     self.glyph_brush.add_font_bytes(font_data)
+    //     // }
 
-    pub fn add_font_bytes<'a: 'font, B: Into<SharedBytes<'a>>>(&mut self, font_data: B) -> FontId {
-        self.glyph_brush.add_font_bytes(font_data)
-    }
+    //     /// Adds an additional font to the one(s) initially added on build.
+    //     ///
+    //     /// Returns a new [`FontId`](struct.FontId.html) to reference this font.
+    //     pub fn add_font<'a>(&mut self, font_data: dyn Font) -> FontId {
+    //         self.glyph_brush.add_font(font_data)
+    //     }
+    // }
 
-    /// Adds an additional font to the one(s) initially added on build.
-    ///
-    /// Returns a new [`FontId`](struct.FontId.html) to reference this font.
-    pub fn add_font<'a: 'font>(&mut self, font_data: Font<'a>) -> FontId {
-        self.glyph_brush.add_font(font_data)
-    }
-}
+    // impl<'l, H: BuildHasher> GlyphCruncher for GlyphBrush<'l, H> {
+    //     fn pixel_bounds_custom_layout<S, L>(
+    //         &mut self,
+    //         section: S,
+    //         custom_layout: &L,
+    //     ) -> Option<Rect<i32>>
+    //     where
+    //         L: GlyphPositioner + Hash,
+    //         S: Into<Cow<'l, VariedSection>>,
+    //     {
+    //         self.glyph_brush
+    //             .pixel_bounds_custom_layout(section, custom_layout)
+    //     }
+    //     fn glyphs_custom_layout<'a, 'b, S, L>(
+    //         &'b mut self,
+    //         section: S,
+    //         custom_layout: &L,
+    //     ) -> PositionedGlyphIter<'b>
+    //     where
+    //         L: GlyphPositioner + Hash,
+    //         S: Into<Cow<'a, VariedSection<'a>>>,
+    //     {
+    //         self.glyph_brush
+    //             .glyphs_custom_layout(section, custom_layout)
+    //     }
 
-impl<'font, 'l, H: BuildHasher> GlyphCruncher<'font> for GlyphBrush<'font, 'l, H> {
-    fn pixel_bounds_custom_layout<'a, S, L>(
-        &mut self,
-        section: S,
-        custom_layout: &L,
-    ) -> Option<Rect<i32>>
-    where
-        L: GlyphPositioner + Hash,
-        S: Into<Cow<'a, VariedSection<'a>>>,
-    {
-        self.glyph_brush
-            .pixel_bounds_custom_layout(section, custom_layout)
-    }
-    fn glyphs_custom_layout<'a, 'b, S, L>(
-        &'b mut self,
-        section: S,
-        custom_layout: &L,
-    ) -> PositionedGlyphIter<'b, 'font>
-    where
-        L: GlyphPositioner + Hash,
-        S: Into<Cow<'a, VariedSection<'a>>>,
-    {
-        self.glyph_brush
-            .glyphs_custom_layout(section, custom_layout)
-    }
-
-    /// Returns the available fonts.
-    ///
-    /// The `FontId` corresponds to the index of the font data.
-    #[inline]
-    fn fonts(&self) -> &[Font<'font>] {
-        self.glyph_brush.fonts()
-    }
+    //     /// Returns the available fonts.
+    //     ///
+    //     /// The `FontId` corresponds to the index of the font data.
+    //     #[inline]
+    //     fn fonts(&self) -> &[Font] {
+    //         self.glyph_brush.fonts()
+    //     }
 }

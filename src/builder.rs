@@ -1,6 +1,7 @@
 use super::*;
 use glium::backend::Facade;
 use glium::draw_parameters::DrawParameters;
+use glyph_brush::Extra;
 
 /*
 /// Builder for a [`GlyphBrush`](struct.GlyphBrush.html).
@@ -28,42 +29,42 @@ use glium::draw_parameters::DrawParameters;
 /// ```
 */
 
-pub struct GlyphBrushBuilder<'a, 'b, H = DefaultSectionHasher> {
-    inner: glyph_brush::GlyphBrushBuilder<'a, H>,
+pub struct GlyphBrushBuilder<'b> {
+    inner: glyph_brush::GlyphBrushBuilder,
     params: DrawParameters<'b>,
 }
 
-impl<'a, 'b> GlyphBrushBuilder<'a, 'b> {
+impl<'b> GlyphBrushBuilder<'b> {
     /// Specifies the default font data used to render glyphs.
     /// Referenced with `FontId(0)`, which is default.
-    #[inline]
-    pub fn using_font_bytes<B: Into<SharedBytes<'a>>>(font_0_data: B) -> Self {
-        Self::using_font(Font::from_bytes(font_0_data).unwrap())
-    }
+    // #[inline]
+    // pub fn using_font_bytes<B: Into<SharedBytes>>(font_0_data: B) -> Self {
+    //     Self::using_font(Font::from_bytes(font_0_data).unwrap())
+    // }
 
-    #[inline]
-    pub fn using_fonts_bytes<B, V>(font_data: V) -> Self
-    where
-        B: Into<SharedBytes<'a>>,
-        V: Into<Vec<B>>,
-    {
-        Self::using_fonts(
-            font_data
-                .into()
-                .into_iter()
-                .map(|data| Font::from_bytes(data).unwrap())
-                .collect::<Vec<_>>(),
-        )
-    }
+    // #[inline]
+    // pub fn using_fonts_bytes<B, V>(font_data: V) -> Self
+    // where
+    //     B: Into<SharedBytes>,
+    //     V: Into<Vec<B>>,
+    // {
+    //     Self::using_fonts(
+    //         font_data
+    //             .into()
+    //             .into_iter()
+    //             .map(|data| Font::from_bytes(data).unwrap())
+    //             .collect::<Vec<_>>(),
+    //     )
+    // }
 
     /// Specifies the default font used to render glyphs.
     /// Referenced with `FontId(0)`, which is default.
     #[inline]
-    pub fn using_font(font_0: Font<'a>) -> Self {
+    pub fn using_font(font_0: FontArc) -> Self {
         Self::using_fonts(vec![font_0])
     }
 
-    pub fn using_fonts<V: Into<Vec<Font<'a>>>>(fonts: V) -> Self {
+    pub fn using_fonts(fonts: Vec<FontArc>) -> Self {
         GlyphBrushBuilder {
             inner: glyph_brush::GlyphBrushBuilder::using_fonts(fonts),
             params: glium::DrawParameters {
@@ -74,8 +75,8 @@ impl<'a, 'b> GlyphBrushBuilder<'a, 'b> {
     }
 }
 
-impl<'a, 'b, H: BuildHasher> GlyphBrushBuilder<'a, 'b, H> {
-    delegate_glyph_brush_builder_fns!(inner);
+impl<'b> GlyphBrushBuilder<'b> {
+    // delegate_glyph_brush_builder_fns!(inner);
 
     /*
     /// Sets the depth test to use on the text section **z** values.
@@ -148,14 +149,14 @@ impl<'a, 'b, H: BuildHasher> GlyphBrushBuilder<'a, 'b, H> {
     /// ```
     	*/
 
-    pub fn section_hasher<T: BuildHasher>(self, section_hasher: T) -> GlyphBrushBuilder<'a, 'b, T> {
-        GlyphBrushBuilder {
-            inner: self.inner.section_hasher(section_hasher),
-            params: self.params,
-        }
-    }
+    // pub fn section_hasher<T: BuildHasher>(self, section_hasher: T) -> GlyphBrushBuilder<'b> {
+    //     GlyphBrushBuilder {
+    //         inner: self.inner.section_hasher(section_hasher),
+    //         params: self.params,
+    //     }
+    // }
 
-    pub fn params<'p>(self, params: DrawParameters<'p>) -> GlyphBrushBuilder<'a, 'p, H> {
+    pub fn params<'p>(self, params: DrawParameters<'p>) -> GlyphBrushBuilder<'p> {
         GlyphBrushBuilder {
             inner: self.inner,
             params,
@@ -163,7 +164,7 @@ impl<'a, 'b, H: BuildHasher> GlyphBrushBuilder<'a, 'b, H> {
     }
 
     /// Builds a `GlyphBrush` using the input glium facade
-    pub fn build<F: Facade>(self, facade: &F) -> GlyphBrush<'a, 'b, H> {
+    pub fn build<FC: Facade>(self, facade: &FC) -> GlyphBrush<'b> {
         let glyph_brush = self.inner.build();
         let (cache_width, cache_height) = glyph_brush.texture_dimensions();
 
