@@ -1,7 +1,7 @@
 use super::*;
 use glium::backend::Facade;
 use glium::draw_parameters::DrawParameters;
-use glyph_brush::Extra;
+
 
 /*
 /// Builder for a [`GlyphBrush`](struct.GlyphBrush.html).

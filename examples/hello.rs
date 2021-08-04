@@ -9,7 +9,7 @@ use glium_glyph::GlyphBrush;
 
 use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
-use glyph_brush::ab_glyph::{Font, FontArc};
+use glyph_brush::ab_glyph::{FontArc};
 use glyph_brush::{Section, Text};
 
 pub fn main() {

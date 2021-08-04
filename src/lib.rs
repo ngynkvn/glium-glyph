@@ -6,11 +6,11 @@ pub extern crate glyph_brush;
 mod builder;
 
 pub use builder::GlyphBrushBuilder;
-use glyph_brush::ab_glyph::{point, Font, FontArc, Rect};
-use glyph_brush::legacy::VariedSection;
+use glyph_brush::ab_glyph::{point, FontArc, Rect};
 
-use std::borrow::Cow;
-use std::hash::{BuildHasher, Hash};
+
+
+
 use std::ops::Deref;
 
 use glium::backend::{Context, Facade};
@@ -20,7 +20,7 @@ use glium::texture::{ClientFormat, RawImage2d};
 use glium::{Program, Surface};
 
 use glyph_brush::{
-    BrushAction, BrushError, DefaultSectionHasher, FontId, GlyphCruncher, GlyphPositioner,
+    BrushAction, BrushError,
     Rectangle, Section,
 };
 
